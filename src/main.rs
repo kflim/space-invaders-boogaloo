@@ -12,7 +12,7 @@ use enums::{InvaderBulletType, InvaderDirection};
 use rand::Rng;
 use resources::{
     GameState, InvaderShootTimer, InvaderSpeed, InvaderTimer, PlayerHitAnimationTimer,
-    PlayerHitTimer, PlayerShootTimer,
+    PlayerHitTimer, PlayerShootTimer, RespawningInvadersTimer,
 };
 
 const WINDOW_WIDTH: f32 = 640.0;
@@ -37,7 +37,7 @@ const INVADER_BULLET_PROBABILITIES: &'static [InvaderBulletProbability] = &[
     },
 ];
 
-// TODO: Add logic to add new invaders after each round, refactor magic numbers and update enemy bullets, then add special enemy bullets, rare enemies, power-ups, and bosses
+// TODO: Refactor magic numbers and update enemy bullets, then add special enemy bullets, rare enemies, power-ups, and bosses
 fn main() {
     App::new()
         .insert_resource(PlayerShootTimer(Timer::from_seconds(0.5, TimerMode::Once)))
@@ -54,6 +54,10 @@ fn main() {
         .insert_resource(PlayerHitAnimationTimer(Timer::from_seconds(
             0.1,
             TimerMode::Repeating,
+        )))
+        .insert_resource(RespawningInvadersTimer(Timer::from_seconds(
+            1.0,
+            TimerMode::Once,
         )))
         .add_plugins(
             DefaultPlugins
@@ -96,6 +100,7 @@ fn main() {
                     bullet_collision_detection,
                     update_player_score,
                     update_player_lives,
+                    check_if_invaders_defeated,
                 )
                     .chain(),
             )
@@ -118,6 +123,14 @@ fn main() {
                 setup_invaders,
             )
                 .run_if(resource_exists_and_equals(GameState::Restarting)),
+        )
+        .add_systems(
+            Update,
+            respawn_invaders.run_if(resource_exists_and_equals(GameState::RespawningInvaders)),
+        )
+        .add_systems(
+            Update,
+            pause_game.run_if(resource_exists_and_equals(GameState::Pausing)),
         )
         .run();
 }
@@ -1061,5 +1074,35 @@ fn play_again(
                 }
             }
         }
+    }
+}
+
+fn check_if_invaders_defeated(
+    invaders: Query<(Entity, &Invader)>,
+    mut game_state: ResMut<GameState>,
+) {
+    if invaders.iter().count() == 0 {
+        *game_state = GameState::RespawningInvaders;
+    }
+}
+
+fn respawn_invaders(
+    commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut game_state: ResMut<GameState>,
+) {
+    setup_invaders(commands, asset_server);
+    *game_state = GameState::Pausing;
+}
+
+fn pause_game(
+    mut game_state: ResMut<GameState>,
+    mut respawn_timer: ResMut<RespawningInvadersTimer>,
+    time: Res<Time>,
+) {
+    respawn_timer.0.tick(time.delta());
+
+    if respawn_timer.0.finished() {
+        *game_state = GameState::Playing;
     }
 }
